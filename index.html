@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PixelForge AI Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #07070f;
+    --panel: rgba(14,14,28,0.9);
+    --border: rgba(99,102,241,0.18);
+    --border-h: rgba(167,139,250,0.55);
+    --accent1: #7c3aed;
+    --accent2: #4f46e5;
+    --accent3: #0ea5e9;
+    --text: #ededf5;
+    --muted: #6b7280;
+    --purple: #a78bfa;
+    --green: #22c55e;
+    --red: #ef4444;
+    --font-display: 'Syne', sans-serif;
+    --font-body: 'DM Sans', sans-serif;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-body); }
+  #root { height: 100%; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.35); border-radius: 99px; }
+  input, textarea, select { font-family: var(--font-body); }
+  input::placeholder, textarea::placeholder { color: #374151; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+  .fade-in { animation: fadeIn 0.35s ease forwards; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect } = React;
+
+// ── CONSTANTS ────────────────────────────────────────────────────────────────
+const STYLES = [
+  { id:"photo",  label:"Fotorrealista", e:"📸", p:"photorealistic, ultra detailed, 8k, professional photography, sharp focus" },
+  { id:"anime",  label:"Anime",         e:"🎌", p:"anime style, vibrant colors, detailed illustration, Studio Ghibli quality" },
+  { id:"digital",label:"Arte Digital",  e:"🎨", p:"digital art, concept art, highly detailed, artstation trending, cinematic" },
+  { id:"oil",    label:"Óleo",          e:"🖼️", p:"oil painting, classical art, masterpiece, museum quality, rich textures" },
+  { id:"cyber",  label:"Cyberpunk",     e:"🌆", p:"cyberpunk, neon lights, futuristic, dark atmosphere, rain reflections" },
+  { id:"fantasy",label:"Fantasía",      e:"✨", p:"fantasy art, magical, epic, dramatic lighting, intricate details" },
+  { id:"mini",   label:"Minimalista",   e:"⬜", p:"minimalist design, clean, simple shapes, elegant, negative space" },
+  { id:"vintage",label:"Vintage",       e:"🕰️", p:"vintage photography, retro, film grain, aged colors, nostalgic" },
+  { id:"3d",     label:"3D Render",     e:"💎", p:"3D render, CGI, ray tracing, subsurface scattering, photorealistic materials" },
+  { id:"comic",  label:"Cómic",         e:"💥", p:"comic book style, bold outlines, halftone dots, vibrant flat colors, pop art" },
+  { id:"water",  label:"Acuarela",      e:"💧", p:"watercolor painting, soft colors, artistic, delicate brushstrokes, paper texture" },
+  { id:"impres", label:"Impresionismo", e:"🌸", p:"impressionist painting, loose brushstrokes, Monet style, dappled light, painterly" },
+];
+const RATIOS  = [
+  { id:"1:1",  label:"1:1",  icon:"⬛", note:"Cuadrado" },
+  { id:"16:9", label:"16:9", icon:"▬",  note:"Panorámico" },
+  { id:"9:16", label:"9:16", icon:"▮",  note:"Vertical" },
+  { id:"4:3",  label:"4:3",  icon:"▪",  note:"Clásico" },
+];
+const QUALITY = [
+  { id:"std",   label:"Estándar", p:"" },
+  { id:"hd",    label:"HD",       p:", masterpiece, best quality, highly detailed" },
+  { id:"ultra", label:"Ultra",    p:", masterpiece, best quality, ultra detailed, 8k UHD, HDR, award winning, professional" },
+];
+
+// ── UTILS ────────────────────────────────────────────────────────────────────
+const toBase64 = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(f); });
+const toDataURL = f => new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(f); });
+const ts = () => new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+
+// ── DESIGN TOKENS ────────────────────────────────────────────────────────────
+const S = {
+  card: { background:"rgba(14,14,28,0.85)", border:"1px solid rgba(99,102,241,0.18)", borderRadius:12, padding:16 },
+  label: { fontSize:10, fontWeight:700, color:"#a78bfa", letterSpacing:"0.1em", textTransform:"uppercase", display:"block", marginBottom:8, fontFamily:"'Syne',sans-serif" },
+  input: { width:"100%", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(99,102,241,0.18)", borderRadius:8, padding:"10px 12px", color:"#ededf5", fontSize:13, outline:"none", fontFamily:"'DM Sans',sans-serif" },
+  textarea: { width:"100%", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(99,102,241,0.18)", borderRadius:8, padding:"10px 12px", color:"#ededf5", fontSize:13, outline:"none", resize:"vertical", lineHeight:1.6, fontFamily:"'DM Sans',sans-serif" },
+};
+
+// ── COMPONENTS ───────────────────────────────────────────────────────────────
+const Label = ({c})=> <span style={S.label}>{c}</span>;
+
+const Btn = ({children,onClick,disabled,v="primary",style:st={}})=>{
+  const base = { border:"none", borderRadius:10, padding:"11px 18px", fontWeight:700, fontSize:13, cursor:disabled?"not-allowed":"pointer", transition:"all 0.2s", display:"flex", alignItems:"center", justifyContent:"center", gap:6, opacity:disabled?0.45:1, fontFamily:"'Syne',sans-serif", ...st };
+  const vs = {
+    primary: { background:"linear-gradient(135deg,#7c3aed,#4f46e5)", color:"#fff", boxShadow:disabled?"none":"0 0 24px rgba(124,58,237,0.35)" },
+    secondary: { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(99,102,241,0.18)", color:"#a78bfa" },
+    teal: { background:"linear-gradient(135deg,#0ea5e9,#06b6d4)", color:"#fff", boxShadow:disabled?"none":"0 0 20px rgba(14,165,233,0.3)" },
+    red: { background:"linear-gradient(135deg,#dc2626,#b91c1c)", color:"#fff", boxShadow:disabled?"none":"0 0 20px rgba(220,38,38,0.3)" },
+  };
+  return <button onClick={onClick} disabled={disabled} style={{...base,...vs[v]}}>{children}</button>;
+};
+
+const Spinner = ({s=16})=> <span style={{display:"inline-block",width:s,height:s,border:"2px solid rgba(255,255,255,0.15)",borderTopColor:"#a78bfa",borderRadius:"50%",animation:"spin 0.8s linear infinite",flexShrink:0}}/>;
+
+const ErrBanner = ({msg})=> msg ? <div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:8,padding:"9px 12px",color:"#fca5a5",fontSize:12,marginTop:8}}>{msg}</div> : null;
+
+const ProgressBar = ({pct,label})=> (
+  <div style={{marginTop:10}}>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#6b7280",marginBottom:5}}>
+      <span>{label}</span><span>{pct}%</span>
+    </div>
+    <div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:99,overflow:"hidden"}}>
+      <div style={{height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,#7c3aed,#0ea5e9)",borderRadius:99,transition:"width 0.4s ease"}}/>
+    </div>
+  </div>
+);
+
+function DropZone({accept,onFile,label,preview,icon="📁"}){
+  const ref = useRef();
+  const [drag,setDrag] = useState(false);
+  return (
+    <div
+      onClick={()=>ref.current.click()}
+      onDragOver={e=>{e.preventDefault();setDrag(true);}}
+      onDragLeave={()=>setDrag(false)}
+      onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)onFile(f);}}
+      style={{border:`2px dashed ${drag?"rgba(167,139,250,0.55)":"rgba(99,102,241,0.2)"}`,borderRadius:12,padding:16,textAlign:"center",cursor:"pointer",transition:"all 0.2s",background:drag?"rgba(124,58,237,0.08)":"rgba(255,255,255,0.02)",minHeight:96,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8}}
+    >
+      <input ref={ref} type="file" accept={accept} style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f)onFile(f);}}/>
+      {preview ? (
+        accept.includes("video") ? <video src={preview} style={{maxWidth:"100%",maxHeight:140,borderRadius:8}} controls muted/> :
+        accept.includes("audio") ? <><div style={{fontSize:26}}>🎵</div><audio src={preview} controls style={{width:"100%"}}/></> :
+        <img src={preview} style={{maxWidth:"100%",maxHeight:140,borderRadius:8,objectFit:"cover"}} alt="preview"/>
+      ) : <>
+        <div style={{fontSize:28}}>{icon}</div>
+        <div style={{fontSize:12,color:"#6b7280"}}>{label}</div>
+        <div style={{fontSize:11,color:"#4b5563"}}>Arrastra o haz clic</div>
+      </>}
+      {preview && <div style={{fontSize:11,color:"#a78bfa",marginTop:4}}>✓ Cargado — clic para cambiar</div>}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// IMAGE MODULE
+// ══════════════════════════════════════════════════════════════════════════════
+function ImageModule({geminiKey,onResult}){
+  const [prompt,setPrompt] = useState("");
+  const [neg,setNeg]       = useState("blurry, low quality, distorted, ugly, watermark, text, deformed");
+  const [style,setStyle]   = useState(STYLES[0]);
+  const [ratio,setRatio]   = useState(RATIOS[0]);
+  const [qual,setQual]     = useState(QUALITY[1]);
+  const [showNeg,setShowNeg] = useState(false);
+  const [busy,setBusy]     = useState(false);
+  const [err,setErr]       = useState("");
+  const [result,setResult] = useState(null);
+
+  const hints = ["Un dragón dorado sobre montañas nevadas al atardecer","Retrato cyberpunk con ojos neón bajo la lluvia","Ciudad flotante entre nubes con cascadas de luz","Astronauta leyendo en la superficie de Marte"];
+
+  const run = async()=>{
+    if(!prompt.trim()){setErr("Escribe una descripción");return;}
+    if(!geminiKey){setErr("Necesitas la Gemini API Key — ve a Ajustes");return;}
+    setErr("");setBusy(true);
+    const full=[prompt,style.p,qual.p].filter(Boolean).join(", ")+(neg?` --no ${neg}`:"");
+    try{
+      const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${geminiKey}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:full}]}],generationConfig:{responseModalities:["TEXT","IMAGE"]}})});
+      if(!res.ok){const e=await res.json();throw new Error(e.error?.message||`HTTP ${res.status}`);}
+      const data=await res.json();
+      const part=data.candidates?.[0]?.content?.parts?.find(p=>p.inlineData);
+      if(!part)throw new Error("No se generó imagen — prueba con otro prompt.");
+      const src=`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      const item={id:Date.now(),type:"image",src,prompt:prompt.trim(),style:style.label,ratio:ratio.id,qual:qual.label,ts:ts()};
+      setResult(item);onResult(item);
+    }catch(e){setErr(e.message);}
+    finally{setBusy(false);}
+  };
+
+  const dl=()=>{if(!result)return;const a=document.createElement("a");a.href=result.src;a.download=`pixelforge_img_${result.id}.png`;a.click();};
+
+  return(
+    <div style={{display:"flex",gap:20,flexWrap:"wrap",animation:"fadeIn 0.3s ease"}}>
+      {/* LEFT */}
+      <div style={{flex:"0 0 290px",display:"flex",flexDirection:"column",gap:14}}>
+        <div style={S.card}>
+          <Label c="✦ Descripción"/>
+          <textarea value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Describe la imagen que quieres crear…" rows={4} style={S.textarea}/>
+          <div style={{marginTop:8,display:"flex",flexWrap:"wrap",gap:4}}>
+            {hints.slice(0,3).map((h,i)=>(
+              <button key={i} onClick={()=>setPrompt(h)} style={{background:"rgba(124,58,237,0.1)",border:"1px solid rgba(124,58,237,0.2)",borderRadius:20,padding:"3px 10px",color:"#a78bfa",cursor:"pointer",fontSize:10,fontFamily:"'DM Sans',sans-serif"}}>{h.slice(0,30)}…</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <Label c="🎨 Estilo Artístico"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5}}>
+            {STYLES.map(s=>(
+              <button key={s.id} onClick={()=>setStyle(s)} style={{background:style.id===s.id?"rgba(124,58,237,0.3)":"rgba(255,255,255,0.03)",border:`1px solid ${style.id===s.id?"rgba(167,139,250,0.55)":"rgba(99,102,241,0.18)"}`,borderRadius:7,padding:"7px 2px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,transition:"all 0.15s"}}>
+                <span style={{fontSize:15}}>{s.e}</span>
+                <span style={{fontSize:9,color:style.id===s.id?"#c4b5fd":"#6b7280",fontWeight:600}}>{s.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{display:"flex",gap:10}}>
+          <div style={{...S.card,flex:1}}>
+            <Label c="📐 Formato"/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+              {RATIOS.map(r=>(
+                <button key={r.id} onClick={()=>setRatio(r)} style={{background:ratio.id===r.id?"rgba(124,58,237,0.3)":"rgba(255,255,255,0.03)",border:`1px solid ${ratio.id===r.id?"rgba(167,139,250,0.55)":"rgba(99,102,241,0.18)"}`,borderRadius:7,padding:"8px 4px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,transition:"all 0.15s"}}>
+                  <span style={{fontSize:16}}>{r.icon}</span>
+                  <span style={{fontSize:9,color:ratio.id===r.id?"#c4b5fd":"#6b7280",fontWeight:600}}>{r.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{...S.card,flex:1}}>
+            <Label c="⚡ Calidad"/>
+            <div style={{display:"flex",flexDirection:"column",gap:5}}>
+              {QUALITY.map(q=>(
+                <button key={q.id} onClick={()=>setQual(q)} style={{background:qual.id===q.id?"rgba(124,58,237,0.3)":"rgba(255,255,255,0.03)",border:`1px solid ${qual.id===q.id?"rgba(167,139,250,0.55)":"rgba(99,102,241,0.18)"}`,borderRadius:7,padding:"7px",cursor:"pointer",color:qual.id===q.id?"#c4b5fd":"#6b7280",fontSize:11,fontWeight:700,fontFamily:"'Syne',sans-serif",transition:"all 0.15s"}}>{q.label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <button onClick={()=>setShowNeg(!showNeg)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#6b7280",fontSize:10,display:"flex",alignItems:"center",gap:5,padding:0,fontFamily:"'Syne',sans-serif",letterSpacing:"0.08em",fontWeight:700}}>
+            <span style={{transform:showNeg?"rotate(90deg)":"rotate(0)",transition:"0.2s",display:"inline-block",fontSize:8}}>▶</span> PROMPT NEGATIVO (excluir)
+          </button>
+          {showNeg&&<textarea value={neg} onChange={e=>setNeg(e.target.value)} rows={2} style={{...S.textarea,marginTop:8,background:"rgba(255,60,60,0.05)",border:"1px solid rgba(255,60,60,0.2)"}}/>}
+        </div>
+
+        <Btn onClick={run} disabled={busy||!prompt.trim()} st={{width:"100%",padding:14,fontSize:14}}>
+          {busy?<><Spinner/>Generando imagen…</>:"✦ Generar Imagen"}
+        </Btn>
+        <ErrBanner msg={err}/>
+      </div>
+
+      {/* RIGHT */}
+      <div style={{flex:"1 1 320px"}}>
+        {result?(
+          <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn 0.4s ease"}}>
+            <img src={result.src} alt={result.prompt} style={{width:"100%",borderRadius:14,boxShadow:"0 20px 50px rgba(0,0,0,0.6)",display:"block"}}/>
+            <div style={{display:"flex",gap:8}}>
+              <Btn onClick={dl} st={{flex:1}}>⬇ Descargar PNG</Btn>
+              <Btn v="secondary" onClick={()=>setPrompt(result.prompt)} st={{flex:1}}>↺ Reutilizar prompt</Btn>
+            </div>
+            <div style={S.card}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {[["Estilo",result.style],["Formato",result.ratio],["Calidad",result.qual],["Hora",result.ts]].map(([k,v])=>(
+                  <div key={k} style={{fontSize:12}}><span style={{color:"#6b7280"}}>{k}: </span><span style={{color:"#ededf5",fontWeight:600}}>{v}</span></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ):(
+          <div style={{minHeight:300,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10,color:"#4b5563"}}>
+            <div style={{fontSize:56,opacity:0.25}}>🖼️</div>
+            <p style={{fontSize:14}}>Tu imagen aparecerá aquí</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VIDEO MODULE
+// ══════════════════════════════════════════════════════════════════════════════
+function VideoModule({hfKey,onResult}){
+  const [mode,setMode]   = useState("text");
+  const [prompt,setPr]   = useState("");
+  const [imgFile,setIF]  = useState(null);
+  const [imgPrev,setIP]  = useState(null);
+  const [busy,setBusy]   = useState(false);
+  const [pct,setPct]     = useState(0);
+  const [pMsg,setPMsg]   = useState("");
+  const [err,setErr]     = useState("");
+  const [result,setRes]  = useState(null);
+
+  const hints=["Un caballo galopando por una playa al atardecer","Flor abriéndose en time-lapse, pétalos rosados","Ciudad futurista con coches voladores bajo la lluvia","Olas del océano rompiendo sobre rocas en tormenta"];
+
+  const handleVideoBlob = async(res,promptText)=>{
+    setPct(85);setPMsg("Procesando vídeo…");
+    const blob=await res.blob();
+    const src=URL.createObjectURL(blob);
+    setPct(100);setPMsg("¡Listo!");
+    const item={id:Date.now(),type:"video",src,prompt:promptText,ts:ts()};
+    setRes(item);onResult(item);
+  };
+
+  const runText=async()=>{
+    if(!prompt.trim()){setErr("Escribe un prompt");return;}
+    if(!hfKey){setErr("Necesitas el HuggingFace Token — ve a Ajustes");return;}
+    setErr("");setBusy(true);setPct(5);setPMsg("Enviando solicitud…");
+    try{
+      const headers={Authorization:`Bearer ${hfKey}`,"Content-Type":"application/json"};
+      const body=JSON.stringify({inputs:prompt.trim(),parameters:{num_inference_steps:25,num_frames:16}});
+      setPct(15);setPMsg("Conectando con el modelo…");
+      let res=await fetch("https://api-inference.huggingface.co/models/damo-vilab/text-to-video-ms-1.7b",{method:"POST",headers,body});
+      if(res.status===503){
+        setPMsg("Modelo iniciando, espera 30s…");setPct(20);
+        await new Promise(r=>setTimeout(r,30000));
+        res=await fetch("https://api-inference.huggingface.co/models/damo-vilab/text-to-video-ms-1.7b",{method:"POST",headers,body});
+      }
+      if(!res.ok)throw new Error(`Error ${res.status}: ${await res.text()}`);
+      await handleVideoBlob(res,prompt.trim());
+    }catch(e){setErr(e.message);}
+    finally{setBusy(false);setPct(0);setPMsg("");}
+  };
+
+  const runImg=async()=>{
+    if(!imgFile){setErr("Sube una imagen");return;}
+    if(!hfKey){setErr("Necesitas el HuggingFace Token — ve a Ajustes");return;}
+    setErr("");setBusy(true);setPct(10);setPMsg("Procesando imagen…");
+    try{
+      const ab=await imgFile.arrayBuffer();
+      setPct(25);setPMsg("Generando animación…");
+      const res=await fetch("https://api-inference.huggingface.co/models/stabilityai/stable-video-diffusion-img2vid-xt",{method:"POST",headers:{Authorization:`Bearer ${hfKey}`,"Content-Type":imgFile.type},body:ab});
+      if(!res.ok)throw new Error(`Error ${res.status}: ${await res.text()}`);
+      await handleVideoBlob(res,"Animación desde imagen");
+    }catch(e){setErr(e.message);}
+    finally{setBusy(false);setPct(0);setPMsg("");}
+  };
+
+  const dl=()=>{if(!result)return;const a=document.createElement("a");a.href=result.src;a.download=`pixelforge_video_${result.id}.mp4`;a.click();};
+
+  return(
+    <div style={{display:"flex",gap:20,flexWrap:"wrap",animation:"fadeIn 0.3s ease"}}>
+      <div style={{flex:"0 0 290px",display:"flex",flexDirection:"column",gap:14}}>
+        <div style={S.card}>
+          <Label c="🎬 Modo de Generación"/>
+          <div style={{display:"flex",gap:8}}>
+            {[{id:"text",i:"✍️",l:"Texto → Vídeo"},{id:"image",i:"🖼️",l:"Imagen → Vídeo"}].map(m=>(
+              <button key={m.id} onClick={()=>setMode(m.id)} style={{flex:1,background:mode===m.id?"rgba(14,165,233,0.18)":"rgba(255,255,255,0.03)",border:`1px solid ${mode===m.id?"rgba(14,165,233,0.45)":"rgba(99,102,241,0.18)"}`,borderRadius:8,padding:"10px 6px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,transition:"all 0.15s"}}>
+                <span style={{fontSize:20}}>{m.i}</span>
+                <span style={{fontSize:10,color:mode===m.id?"#7dd3fc":"#6b7280",fontWeight:700,fontFamily:"'Syne',sans-serif"}}>{m.l}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {mode==="text"?(
+          <div style={S.card}>
+            <Label c="✦ Descripción del Vídeo"/>
+            <textarea value={prompt} onChange={e=>setPr(e.target.value)} placeholder="Describe el vídeo…" rows={4} style={S.textarea}/>
+            <div style={{marginTop:8,display:"flex",flexWrap:"wrap",gap:4}}>
+              {hints.slice(0,2).map((h,i)=>(
+                <button key={i} onClick={()=>setPr(h)} style={{background:"rgba(14,165,233,0.08)",border:"1px solid rgba(14,165,233,0.2)",borderRadius:20,padding:"3px 10px",color:"#7dd3fc",cursor:"pointer",fontSize:10,fontFamily:"'DM Sans',sans-serif"}}>{h.slice(0,32)}…</button>
+              ))}
+            </div>
+          </div>
+        ):(
+          <div style={S.card}>
+            <Label c="🖼️ Imagen a Animar"/>
+            <DropZone accept="image/*" icon="🖼️" label="JPG/PNG — cara o escena a animar" preview={imgPrev}
+              onFile={async f=>{setIF(f);setIP(await toDataURL(f));}}/>
+          </div>
+        )}
+
+        <div style={{...S.card,background:"rgba(14,165,233,0.05)",border:"1px solid rgba(14,165,233,0.15)"}}>
+          <div style={{fontSize:11,color:"#7dd3fc",lineHeight:1.8}}>
+            <strong>ℹ️ HuggingFace Free:</strong><br/>
+            • 1ª generación: 1-3 min (modelo frío)<br/>
+            • Vídeos ~2s a 256×256px<br/>
+            • Token gratuito en hf.co
+          </div>
+        </div>
+
+        <Btn v="teal" onClick={mode==="text"?runText:runImg} disabled={busy||(mode==="text"?!prompt.trim():!imgFile)} st={{width:"100%",padding:14,fontSize:14}}>
+          {busy?<><Spinner/>  {pMsg||"Generando…"}</>:"🎬 Generar Vídeo"}
+        </Btn>
+        {busy&&pct>0&&<ProgressBar pct={pct} label={pMsg}/>}
+        <ErrBanner msg={err}/>
+      </div>
+
+      <div style={{flex:"1 1 320px"}}>
+        {result?(
+          <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn 0.4s ease"}}>
+            <video src={result.src} controls autoPlay loop style={{width:"100%",borderRadius:14,boxShadow:"0 20px 50px rgba(0,0,0,0.6)",background:"#000"}}/>
+            <div style={{display:"flex",gap:8}}>
+              <Btn v="teal" onClick={dl} st={{flex:1}}>⬇ Descargar MP4</Btn>
+              <Btn v="secondary" onClick={()=>setPr(result.prompt)} st={{flex:1}}>↺ Prompt</Btn>
+            </div>
+            <div style={S.card}><div style={{fontSize:12,color:"#6b7280"}}>Prompt: <span style={{color:"#ededf5"}}>{result.prompt}</span></div><div style={{fontSize:11,color:"#6b7280",marginTop:4}}>Generado a las {result.ts}</div></div>
+          </div>
+        ):(
+          <div style={{minHeight:300,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10,color:"#4b5563"}}>
+            <div style={{fontSize:56,opacity:0.25}}>🎬</div>
+            <p style={{fontSize:14}}>Tu vídeo aparecerá aquí</p>
+            <p style={{fontSize:12,opacity:0.6,textAlign:"center",maxWidth:240}}>Generación ~1-3 min con HuggingFace Free</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LIP SYNC MODULE
+// ══════════════════════════════════════════════════════════════════════════════
+function LipSyncModule({hfKey,onResult}){
+  const [mode,setMode]   = useState("sadtalker");
+  const [faceF,setFaceF] = useState(null);
+  const [facePv,setFacePv] = useState(null);
+  const [videoF,setVideoF] = useState(null);
+  const [videoPv,setVideoPv] = useState(null);
+  const [audioF,setAudioF] = useState(null);
+  const [audioPv,setAudioPv] = useState(null);
+  const [busy,setBusy]   = useState(false);
+  const [pct,setPct]     = useState(0);
+  const [pMsg,setPMsg]   = useState("");
+  const [err,setErr]     = useState("");
+  const [result,setRes]  = useState(null);
+  const [log,setLog]     = useState([]);
+
+  const addLog=m=>setLog(p=>[...p.slice(-4),m]);
+
+  const runGradio=async(spaceUrl,fnIndex,data)=>{
+    addLog("Conectando con HuggingFace Space…");
+    const sessionHash=Math.random().toString(36).slice(2,10);
+    const joinRes=await fetch(`${spaceUrl}/queue/join`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({data,fn_index:fnIndex,session_hash:sessionHash})});
+    if(!joinRes.ok)throw new Error(`No se pudo conectar con el Space (${joinRes.status}). El Space puede estar dormido — reintenta en 1 min.`);
+    const {event_id}=await joinRes.json();
+    return new Promise((resolve,reject)=>{
+      const es=new EventSource(`${spaceUrl}/queue/data?session_hash=${event_id||sessionHash}`);
+      const timeout=setTimeout(()=>{es.close();reject(new Error("Tiempo agotado (5 min). Reintenta — el Space puede haberse dormido."));},300000);
+      es.onmessage=e=>{
+        try{
+          const msg=JSON.parse(e.data);
+          if(msg.msg==="estimation"){addLog(`En cola: ${msg.queue_size||0} antes de ti`);setPct(12);}
+          if(msg.msg==="send_data"){addLog("Enviando archivos…");setPct(28);}
+          if(msg.msg==="process_starts"){addLog("Procesando…");setPct(45);}
+          if(msg.msg==="process_generating"){addLog("Generando frames…");setPct(68);}
+          if(msg.msg==="process_completed"){
+            clearTimeout(timeout);es.close();
+            if(msg.output?.error)reject(new Error(msg.output.error));
+            else resolve(msg.output?.data);
+          }
+          if(msg.msg==="queue_full"){clearTimeout(timeout);es.close();reject(new Error("Cola llena — reintenta en un momento."));}
+        }catch(_){}
+      };
+      es.onerror=()=>{clearTimeout(timeout);es.close();reject(new Error("Error de conexión. El Space puede estar dormido (es gratuito). Espera 1 min y reintenta."));};
+    });
+  };
+
+  const extractSrc=(outputData,spaceUrl)=>{
+    if(!outputData||!outputData[0])return null;
+    const out=outputData[0];
+    if(typeof out==="string")return out.startsWith("http")?out:`${spaceUrl}/file=${out}`;
+    if(out?.url)return out.url;
+    if(out?.name)return `${spaceUrl}/file=${out.name}`;
+    return null;
+  };
+
+  const runSadTalker=async()=>{
+    if(!faceF||!audioF){setErr("Sube una foto de cara y un audio");return;}
+    if(!hfKey){setErr("Necesitas el HuggingFace Token — ve a Ajustes");return;}
+    setErr("");setBusy(true);setPct(5);setLog([]);setPMsg("Preparando…");
+    try{
+      const [faceB64,audioB64]=await Promise.all([toBase64(faceF),toBase64(audioF)]);
+      addLog("Subiendo a SadTalker Space…");setPct(10);
+      const spaceUrl="https://vinthony-sadtalker.hf.space";
+      const payload=[
+        {name:faceF.name,data:`data:${faceF.type};base64,${faceB64}`},
+        {name:audioF.name,data:`data:${audioF.type};base64,${audioB64}`},
+        "crop",true,true,0,256,2,"full",false
+      ];
+      setPMsg("Generando lip sync (2-5 min)…");
+      const out=await runGradio(spaceUrl,0,payload);
+      const src=extractSrc(out,spaceUrl);
+      if(!src)throw new Error("No se recibió vídeo del servidor.");
+      setPct(100);addLog("✅ ¡Completado!");
+      const item={id:Date.now(),type:"video",src,prompt:"Lip Sync — SadTalker",ts:ts()};
+      setRes(item);onResult(item);
+    }catch(e){setErr(e.message);}
+    finally{setBusy(false);setPMsg("");}
+  };
+
+  const runWav2Lip=async()=>{
+    if(!videoF||!audioF){setErr("Sube un vídeo y un audio");return;}
+    if(!hfKey){setErr("Necesitas el HuggingFace Token — ve a Ajustes");return;}
+    setErr("");setBusy(true);setPct(5);setLog([]);setPMsg("Preparando…");
+    try{
+      const [videoB64,audioB64]=await Promise.all([toBase64(videoF),toBase64(audioF)]);
+      addLog("Subiendo a Wav2Lip Space…");setPct(10);
+      const spaceUrl="https://camenduru-wav2lip.hf.space";
+      const payload=[
+        {name:videoF.name,data:`data:${videoF.type};base64,${videoB64}`},
+        {name:audioF.name,data:`data:${audioF.type};base64,${audioB64}`}
+      ];
+      setPMsg("Sincronizando labios (2-4 min)…");
+      const out=await runGradio(spaceUrl,0,payload);
+      const src=extractSrc(out,spaceUrl);
+      if(!src)throw new Error("No se recibió vídeo del servidor.");
+      setPct(100);addLog("✅ ¡Completado!");
+      const item={id:Date.now(),type:"video",src,prompt:"Lip Sync — Wav2Lip",ts:ts()};
+      setRes(item);onResult(item);
+    }catch(e){setErr(e.message);}
+    finally{setBusy(false);setPMsg("");}
+  };
+
+  const dl=()=>{if(!result)return;const a=document.createElement("a");a.href=result.src;a.download=`pixelforge_lipsync_${result.id}.mp4`;a.click();};
+
+  return(
+    <div style={{display:"flex",gap:20,flexWrap:"wrap",animation:"fadeIn 0.3s ease"}}>
+      <div style={{flex:"0 0 310px",display:"flex",flexDirection:"column",gap:14}}>
+        <div style={S.card}>
+          <Label c="🗣️ Motor de Lip Sync"/>
+          <div style={{display:"flex",gap:8}}>
+            {[{id:"sadtalker",i:"🧑",l:"SadTalker",d:"Foto → Vídeo hablando"},{id:"wav2lip",i:"🎭",l:"Wav2Lip",d:"Vídeo + Audio sync"}].map(m=>(
+              <button key={m.id} onClick={()=>setMode(m.id)} style={{flex:1,background:mode===m.id?"rgba(220,38,38,0.18)":"rgba(255,255,255,0.03)",border:`1px solid ${mode===m.id?"rgba(220,38,38,0.4)":"rgba(99,102,241,0.18)"}`,borderRadius:8,padding:"10px 6px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,transition:"all 0.15s"}}>
+                <span style={{fontSize:20}}>{m.i}</span>
+                <span style={{fontSize:11,color:mode===m.id?"#fca5a5":"#6b7280",fontWeight:700,fontFamily:"'Syne',sans-serif"}}>{m.l}</span>
+                <span style={{fontSize:9,color:"#6b7280",textAlign:"center"}}>{m.d}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {mode==="sadtalker"?(
+          <>
+            <div style={S.card}><Label c="📸 Foto de la Cara"/><DropZone accept="image/*" icon="🧑" label="Foto frontal con cara visible (JPG/PNG)" preview={facePv} onFile={async f=>{setFaceF(f);setFacePv(await toDataURL(f));}}/></div>
+            <div style={S.card}><Label c="🎵 Audio a Sincronizar"/><DropZone accept="audio/*" icon="🎵" label="Audio que pronunciará la cara (MP3/WAV)" preview={audioPv} onFile={async f=>{setAudioF(f);setAudioPv(URL.createObjectURL(f));}}/></div>
+          </>
+        ):(
+          <>
+            <div style={S.card}><Label c="🎬 Vídeo con Cara"/><DropZone accept="video/*" icon="🎬" label="Vídeo corto con cara visible (MP4, <30s)" preview={videoPv} onFile={async f=>{setVideoF(f);setVideoPv(URL.createObjectURL(f));}}/></div>
+            <div style={S.card}><Label c="🎵 Audio Nuevo"/><DropZone accept="audio/*" icon="🎵" label="Audio que sincronizarás con los labios (MP3/WAV)" preview={audioPv} onFile={async f=>{setAudioF(f);setAudioPv(URL.createObjectURL(f));}}/></div>
+          </>
+        )}
+
+        <div style={{...S.card,background:"rgba(220,38,38,0.05)",border:"1px solid rgba(220,38,38,0.15)"}}>
+          <div style={{fontSize:11,color:"#fca5a5",lineHeight:1.8}}>
+            <strong>ℹ️ Spaces HF gratuitos:</strong><br/>
+            • 2-5 min si el Space está dormido<br/>
+            • SadTalker: mejor con cara frontal<br/>
+            • Wav2Lip: vídeo corto y voz clara
+          </div>
+        </div>
+
+        <Btn v="red" onClick={mode==="sadtalker"?runSadTalker:runWav2Lip} disabled={busy||(mode==="sadtalker"?(!faceF||!audioF):(!videoF||!audioF))} st={{width:"100%",padding:14,fontSize:14}}>
+          {busy?<><Spinner/> {pMsg||"Procesando…"}</>:"🗣️ Generar Lip Sync"}
+        </Btn>
+        {busy&&pct>0&&<ProgressBar pct={pct} label={pMsg}/>}
+
+        {log.length>0&&(
+          <div style={{...S.card,background:"rgba(0,0,0,0.4)"}}>
+            <Label c="📋 Estado"/>
+            {log.map((l,i)=><div key={i} style={{fontSize:11,color:i===log.length-1?"#a78bfa":"#4b5563",padding:"2px 0"}}>› {l}</div>)}
+          </div>
+        )}
+        <ErrBanner msg={err}/>
+      </div>
+
+      <div style={{flex:"1 1 320px"}}>
+        {result?(
+          <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn 0.4s ease"}}>
+            <video src={result.src} controls autoPlay loop style={{width:"100%",borderRadius:14,boxShadow:"0 20px 50px rgba(0,0,0,0.6)",background:"#000"}}/>
+            <Btn v="red" onClick={dl} st={{width:"100%"}}>⬇ Descargar MP4</Btn>
+            <div style={S.card}><div style={{fontSize:12,color:"#6b7280"}}>Motor: <span style={{color:"#fca5a5",fontWeight:600}}>{result.prompt}</span></div><div style={{fontSize:11,color:"#6b7280",marginTop:4}}>Completado a las {result.ts}</div></div>
+          </div>
+        ):(
+          <div style={{minHeight:300,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10,color:"#4b5563"}}>
+            <div style={{fontSize:56,opacity:0.25}}>🗣️</div>
+            <p style={{fontSize:14}}>El vídeo lip sync aparecerá aquí</p>
+            <p style={{fontSize:12,opacity:0.6,textAlign:"center",maxWidth:260}}>SadTalker: foto → vídeo hablando<br/>Wav2Lip: sincroniza labios en vídeo</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GALLERY
+// ══════════════════════════════════════════════════════════════════════════════
+function Gallery({items}){
+  const dl=item=>{const a=document.createElement("a");a.href=item.src;a.download=`pixelforge_${item.type}_${item.id}.${item.type==="image"?"png":"mp4"}`;a.click();};
+  if(!items.length)return(
+    <div style={{textAlign:"center",padding:"80px 20px",color:"#4b5563"}}>
+      <div style={{fontSize:56,opacity:0.2,marginBottom:12}}>🗂️</div>
+      <p style={{fontSize:14}}>Galería vacía — genera imágenes o vídeos para verlos aquí</p>
+    </div>
+  );
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14,animation:"fadeIn 0.3s ease"}}>
+      {items.map(item=>(
+        <div key={item.id} style={{borderRadius:12,overflow:"hidden",border:"1px solid rgba(99,102,241,0.18)",background:"rgba(14,14,28,0.85)",transition:"all 0.2s",cursor:"default"}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(167,139,250,0.5)";e.currentTarget.style.transform="translateY(-3px)";}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(99,102,241,0.18)";e.currentTarget.style.transform="translateY(0)";}}>
+          {item.type==="image"?(
+            <img src={item.src} alt={item.prompt} style={{width:"100%",aspectRatio:"1",objectFit:"cover",display:"block"}}/>
+          ):(
+            <video src={item.src} muted autoPlay loop style={{width:"100%",aspectRatio:"1",objectFit:"cover",display:"block",background:"#000"}}/>
+          )}
+          <div style={{padding:"10px 12px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontSize:9,fontWeight:800,color:item.type==="image"?"#a78bfa":item.prompt?.includes("Lip")?"#fca5a5":"#7dd3fc",textTransform:"uppercase",fontFamily:"'Syne',sans-serif",letterSpacing:"0.08em"}}>
+                {item.type==="image"?"🖼 Imagen":item.prompt?.includes("Lip")?"🗣 Lip Sync":"🎬 Vídeo"}
+              </span>
+              <span style={{fontSize:10,color:"#6b7280"}}>{item.ts}</span>
+            </div>
+            <div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:8}}>{item.prompt}</div>
+            <button onClick={()=>dl(item)} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(99,102,241,0.18)",borderRadius:6,padding:"5px 0",color:"#a78bfa",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>⬇ Descargar</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SETTINGS PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+function Settings({geminiKey,hfKey,onSave}){
+  const [gk,setGk]=useState(geminiKey);
+  const [hk,setHk]=useState(hfKey);
+  return(
+    <div style={{maxWidth:540,margin:"0 auto",animation:"fadeIn 0.3s ease"}}>
+      <div style={{...S.card,marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+          <div style={{width:38,height:38,borderRadius:9,background:"linear-gradient(135deg,#7c3aed,#4f46e5)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,boxShadow:"0 0 18px rgba(124,58,237,0.4)"}}>✦</div>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:"#ededf5",fontFamily:"'Syne',sans-serif"}}>Gemini API Key</div>
+            <div style={{fontSize:11,color:"#6b7280"}}>Para generación de imágenes (Google AI Studio)</div>
+          </div>
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{marginLeft:"auto",fontSize:11,color:"#a78bfa",textDecoration:"none",fontWeight:600}}>Obtener gratis →</a>
+        </div>
+        <input value={gk} onChange={e=>setGk(e.target.value)} type="password" placeholder="AIza..." style={S.input}/>
+        {gk&&<div style={{fontSize:11,color:"#22c55e",marginTop:6}}>✓ Key introducida</div>}
+        <div style={{fontSize:11,color:"#4b5563",marginTop:8,lineHeight:1.6}}>
+          1. Abre <strong style={{color:"#a78bfa"}}>aistudio.google.com</strong><br/>
+          2. Haz clic en "Get API Key" → "Create API Key"<br/>
+          3. Copia y pega aquí
+        </div>
+      </div>
+
+      <div style={{...S.card,marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+          <div style={{width:38,height:38,borderRadius:9,background:"linear-gradient(135deg,#0ea5e9,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🤗</div>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:"#ededf5",fontFamily:"'Syne',sans-serif"}}>HuggingFace Token</div>
+            <div style={{fontSize:11,color:"#6b7280"}}>Para vídeo y lip sync (Inference API + Spaces)</div>
+          </div>
+          <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" style={{marginLeft:"auto",fontSize:11,color:"#7dd3fc",textDecoration:"none",fontWeight:600}}>Obtener gratis →</a>
+        </div>
+        <input value={hk} onChange={e=>setHk(e.target.value)} type="password" placeholder="hf_..." style={S.input}/>
+        {hk&&<div style={{fontSize:11,color:"#22c55e",marginTop:6}}>✓ Token introducido</div>}
+        <div style={{fontSize:11,color:"#4b5563",marginTop:8,lineHeight:1.6}}>
+          1. Abre <strong style={{color:"#7dd3fc"}}>huggingface.co/settings/tokens</strong><br/>
+          2. Haz clic en "New token" → tipo "Read"<br/>
+          3. Copia y pega aquí
+        </div>
+      </div>
+
+      <Btn onClick={()=>onSave(gk,hk)} disabled={!gk&&!hk} st={{width:"100%",padding:14,fontSize:15}}>
+        💾 Guardar Keys (se recuerdan automáticamente)
+      </Btn>
+
+      <div style={{marginTop:16,padding:14,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:10,fontSize:12,color:"#86efac",lineHeight:1.7}}>
+        🔒 <strong>Privacidad:</strong> Tus API keys se guardan solo en tu navegador (localStorage). No se envían a ningún servidor externo salvo las APIs de Google y HuggingFace al generar contenido.
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MAIN APP
+// ══════════════════════════════════════════════════════════════════════════════
+function App(){
+  const [geminiKey,setGeminiKey] = useState(()=>localStorage.getItem("pf_gk")||"");
+  const [hfKey,setHfKey]         = useState(()=>localStorage.getItem("pf_hk")||"");
+  const [tab,setTab]             = useState(()=> {
+    const gk=localStorage.getItem("pf_gk");
+    const hk=localStorage.getItem("pf_hk");
+    if(!gk&&!hk)return "settings";
+    return "image";
+  });
+  const [gallery,setGallery]     = useState([]);
+
+  const saveKeys=(gk,hk)=>{
+    setGeminiKey(gk);setHfKey(hk);
+    if(gk)localStorage.setItem("pf_gk",gk); else localStorage.removeItem("pf_gk");
+    if(hk)localStorage.setItem("pf_hk",hk); else localStorage.removeItem("pf_hk");
+    if(gk||hk)setTab("image");
+  };
+
+  const addResult=useCallback(item=>setGallery(p=>[item,...p]),[]);
+
+  const TABS=[
+    {id:"image",   icon:"🖼️",  label:"Imágenes",  c:"#a78bfa", needs:"gemini"},
+    {id:"video",   icon:"🎬",  label:"Vídeo",     c:"#7dd3fc", needs:"hf"},
+    {id:"lipsync", icon:"🗣️",  label:"Lip Sync",  c:"#fca5a5", needs:"hf"},
+    {id:"gallery", icon:"🗂️",  label:`Galería${gallery.length?` (${gallery.length})`:""}`, c:"#86efac", needs:null},
+    {id:"settings",icon:"⚙️",  label:"Ajustes",   c:"#d1d5db", needs:null},
+  ];
+
+  const gStatus=!!geminiKey;
+  const hStatus=!!hfKey;
+
+  return(
+    <div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",flexDirection:"column"}}>
+
+      {/* HEADER */}
+      <header style={{borderBottom:"1px solid rgba(99,102,241,0.18)",padding:"0 24px",height:62,display:"flex",alignItems:"center",justifyContent:"space-between",background:"rgba(7,7,15,0.92)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,background:"linear-gradient(135deg,#7c3aed,#4f46e5)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,boxShadow:"0 0 20px rgba(124,58,237,0.45)"}}>✦</div>
+          <div>
+            <div style={{fontWeight:800,fontSize:17,letterSpacing:"-0.5px",background:"linear-gradient(90deg,#a78bfa,#60a5fa,#34d399)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontFamily:"'Syne',sans-serif"}}>PixelForge AI Studio</div>
+            <div style={{fontSize:9,color:"#4b5563",marginTop:-2,letterSpacing:"0.1em",fontFamily:"'Syne',sans-serif"}}>IMAGEN · VÍDEO · LIP SYNC · COSTE CERO</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:12,alignItems:"center"}}>
+          <div style={{display:"flex",gap:10}}>
+            {[{l:"Gemini",ok:gStatus},{l:"HuggingFace",ok:hStatus}].map(({l,ok})=>(
+              <div key={l} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:ok?"#22c55e":"#4b5563"}}>
+                <div style={{width:6,height:6,borderRadius:"50%",background:ok?"#22c55e":"#374151",boxShadow:ok?"0 0 6px #22c55e":"none"}}/>
+                {l}
+              </div>
+            ))}
+          </div>
+          <button onClick={()=>setTab("settings")} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(99,102,241,0.18)",borderRadius:7,padding:"5px 12px",color:"#6b7280",cursor:"pointer",fontSize:11,fontFamily:"'DM Sans',sans-serif"}}>🔑 API Keys</button>
+        </div>
+      </header>
+
+      {/* NAV */}
+      <nav style={{borderBottom:"1px solid rgba(99,102,241,0.14)",padding:"0 24px",display:"flex",background:"rgba(10,10,20,0.5)",gap:2}}>
+        {TABS.map(t=>{
+          const disabled=t.needs==="gemini"?!geminiKey:t.needs==="hf"?!hfKey:false;
+          const active=tab===t.id;
+          return(
+            <button key={t.id} onClick={()=>!disabled&&setTab(t.id)}
+              title={disabled?`Necesitas ${t.needs==="gemini"?"Gemini API Key":"HuggingFace Token"} — ve a Ajustes`:""}
+              style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?t.c:"transparent"}`,padding:"14px 16px",color:active?t.c:disabled?"#374151":"#6b7280",cursor:disabled?"not-allowed":"pointer",fontSize:12,fontWeight:700,fontFamily:"'Syne',sans-serif",transition:"all 0.2s",display:"flex",alignItems:"center",gap:5,opacity:disabled?0.38:1,letterSpacing:"0.03em"}}>
+              {t.icon} {t.label}
+              {disabled&&<span style={{fontSize:9,background:"rgba(255,255,255,0.06)",padding:"1px 5px",borderRadius:4,color:"#4b5563"}}>sin key</span>}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* CONTENT */}
+      <main style={{flex:1,padding:24,overflowY:"auto",maxWidth:1140,margin:"0 auto",width:"100%"}}>
+        {tab==="image"   && <ImageModule   geminiKey={geminiKey} onResult={addResult}/>}
+        {tab==="video"   && <VideoModule   hfKey={hfKey}         onResult={addResult}/>}
+        {tab==="lipsync" && <LipSyncModule hfKey={hfKey}         onResult={addResult}/>}
+        {tab==="gallery" && <Gallery       items={gallery}/>}
+        {tab==="settings"&& <Settings      geminiKey={geminiKey} hfKey={hfKey} onSave={saveKeys}/>}
+      </main>
+
+      {/* FOOTER */}
+      <footer style={{borderTop:"1px solid rgba(99,102,241,0.1)",padding:"10px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(7,7,15,0.8)"}}>
+        <span style={{fontSize:11,color:"#374151",fontFamily:"'Syne',sans-serif"}}>PixelForge AI Studio — uso personal · coste 0€</span>
+        <span style={{fontSize:11,color:"#374151"}}>Gemini 2.0 Flash · HuggingFace Free Tier</span>
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
