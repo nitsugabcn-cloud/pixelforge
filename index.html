@@ -162,7 +162,7 @@ function ImageModule({geminiKey,onResult}){
     setErr("");setBusy(true);
     const full=[prompt,style.p,qual.p].filter(Boolean).join(", ")+(neg?` --no ${neg}`:"");
     try{
-      const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${geminiKey}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:full}]}],generationConfig:{responseModalities:["TEXT","IMAGE"]}})});
+      const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiKey}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:full}]}],generationConfig:{responseModalities:["TEXT","IMAGE"]}})});
       if(!res.ok){const e=await res.json();throw new Error(e.error?.message||`HTTP ${res.status}`);}
       const data=await res.json();
       const part=data.candidates?.[0]?.content?.parts?.find(p=>p.inlineData);
